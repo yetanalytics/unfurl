@@ -37,7 +37,9 @@
   [meta-tag]
   (if-let [meta-tag-name (:name meta-tag)]
     meta-tag-name
-    (:property meta-tag)))
+    (if-let [property (:property meta-tag)]
+      property
+      (:itemprop meta-tag))))
 
 (defn- meta-tag-value
   [meta-tags tag-name]
@@ -51,7 +53,8 @@
 (defn- unfurl-html
   [title-tags meta-tags]
   (strip-nil-values {:title       (first (:content (first title-tags)))
-                     :description (meta-tag-value meta-tags "description")}))
+                     :description (meta-tag-value meta-tags "description")
+                     :duration    (meta-tag-value meta-tags "duration")}))
 
 ; See https://getstarted.sailthru.com/site/horizon-overview/horizon-meta-tags/
 (defn- unfurl-sailthru
@@ -80,13 +83,14 @@
   (strip-nil-values {:url         (meta-tag-value meta-tags "og:url")
                      :title       (meta-tag-value meta-tags "og:title")
                      :description (meta-tag-value meta-tags "og:description")
-                     :preview-url (meta-tag-value meta-tags "og:image")}))
+                     :preview-url (meta-tag-value meta-tags "og:image")
+                     :platform    (meta-tag-value meta-tags "og:site_name")}))
 
 (defn- http-get
   "'Friendly' form of http/get that adds request information to any exceptions that get thrown by clj-http."
   [{ url     :url
      options :options
-     :as request }]
+     :as request}]
   (try
     (http/get url options)
     (catch clojure.lang.ExceptionInfo ei
@@ -133,21 +137,21 @@
     ; Use oembed services first, and then fallback if it's not supported for the given URL
     (if-let [oembed-data (unfurl-oembed url)]
       oembed-data
-      (let [request      {:url     url
-                          :options (strip-nil-values { :accept           :html
-                                                       :follow-redirects follow-redirects
-                                                       :socket-timeout   timeout-ms
-                                                       :conn-timeout     timeout-ms
-                                                       :headers          {"Range"          (str "bytes=0-" (- max-content-length 1))
-                                                                          "Accept"         "text/html"
-                                                                          "Accept-Charset" "utf-8, iso-8859-1;q=0.5, *;q=0.1"}
-                                                       :client-params    {"http.protocol.allow-circular-redirects" false
-                                                                          "http.useragent" user-agent}
-                                                       :proxy-host       proxy-host
-                                                       :proxy-port       proxy-port})}
-            response     (http-get request)
+      (let [request {:url     url
+                     :options (strip-nil-values {:accept           :html
+                                                 :follow-redirects follow-redirects
+                                                 :socket-timeout   timeout-ms
+                                                 :conn-timeout     timeout-ms
+                                                 :headers          {"Range"          (str "bytes=0-" (- max-content-length 1))
+                                                                    "Accept"         "text/html"
+                                                                    "Accept-Charset" "utf-8, iso-8859-1;q=0.5, *;q=0.1"}
+                                                 :client-params    {"http.protocol.allow-circular-redirects" false
+                                                                    "http.useragent" user-agent}
+                                                 :proxy-host       proxy-host
+                                                 :proxy-port       proxy-port})}
+            response (http-get request)
             content-type (get (:headers response) "content-type")
-            body         (:body response)]
+            body (:body response)]
         (if (.startsWith ^String content-type "text/html")
           (let [parsed-body (hc/as-hickory (hc/parse body))
                 title-tags  (hs/select (hs/descendant (hs/tag :title)) parsed-body)
